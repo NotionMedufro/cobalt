@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Converting YouTube to MP3...</title>
+    <title>YouTube to MP3 Streaming Player</title>
     <style>
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
@@ -12,76 +12,372 @@
             display: flex;
             flex-direction: column;
             align-items: center;
-            justify-content: center;
-            height: 100vh;
+            justify-content: flex-start;
+            min-height: 100vh;
             margin: 0;
             padding: 20px;
             text-align: center;
+        }
+        .container {
+            max-width: 800px;
+            width: 100%;
+            margin: 0 auto;
+        }
+        .form-group {
+            margin-bottom: 20px;
+        }
+        .input-group {
+            display: flex;
+            width: 100%;
+        }
+        #youtubeInput {
+            flex-grow: 1;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-right: none;
+            border-radius: 4px 0 0 4px;
+            font-size: 16px;
+        }
+        #convertButton {
+            padding: 10px 20px;
+            background-color: #3498db;
+            color: white;
+            border: none;
+            border-radius: 0 4px 4px 0;
+            cursor: pointer;
+            font-size: 16px;
+            transition: background-color 0.3s;
+        }
+        #convertButton:hover {
+            background-color: #2980b9;
+        }
+        #convertButton:disabled {
+            background-color: #95a5a6;
+            cursor: not-allowed;
+        }
+        .player-container {
+            width: 100%;
+            margin: 20px 0;
+            display: none;
+        }
+        #audioPlayer {
+            width: 100%;
         }
         .loader {
             border: 5px solid #f3f3f3;
             border-top: 5px solid #3498db;
             border-radius: 50%;
-            width: 50px;
-            height: 50px;
+            width: 40px;
+            height: 40px;
             animation: spin 1s linear infinite;
             margin: 20px auto;
+            display: none;
         }
         @keyframes spin {
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
         }
-        .error {
-            color: #e74c3c;
-            font-weight: bold;
+        .status {
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 4px;
             display: none;
         }
-        .message {
-            max-width: 600px;
-            margin: 0 auto;
+        .error {
+            background-color: #ffebee;
+            color: #c62828;
+            border: 1px solid #ffcdd2;
+        }
+        .success {
+            background-color: #e8f5e9;
+            color: #2e7d32;
+            border: 1px solid #c8e6c9;
+        }
+        .info {
+            background-color: #e3f2fd;
+            color: #1565c0;
+            border: 1px solid #bbdefb;
+        }
+        .help-text {
+            font-size: 14px;
+            color: #7f8c8d;
+            margin-top: 10px;
+        }
+        footer {
+            margin-top: 40px;
+            font-size: 12px;
+            color: #95a5a6;
         }
     </style>
 </head>
 <body>
-    <h1>YouTube to MP3 Converter</h1>
-    <div class="loader" id="loader"></div>
-    <div class="message" id="message">
-        <p>Converting your YouTube video to MP3 with lowest bitrate (8kbps)...</p>
-        <p>You will be redirected automatically in a few seconds.</p>
+    <div class="container">
+        <h1>YouTube to MP3 Streaming Player</h1>
+        
+        <div class="form-group">
+            <label for="youtubeInput">Enter YouTube URL or Video ID:</label>
+            <div class="input-group">
+                <input type="text" id="youtubeInput" placeholder="https://www.youtube.com/watch?v=dQw4w9WgXcQ or dQw4w9WgXcQ" />
+                <button id="convertButton">Stream MP3</button>
+            </div>
+            <p class="help-text">Audio will be streamed at the lowest quality (8kbps) for efficient bandwidth usage.</p>
+        </div>
+        
+        <div id="loader" class="loader"></div>
+        
+        <div id="statusMessage" class="status"></div>
+        
+        <div id="playerContainer" class="player-container">
+            <h3 id="nowPlaying"></h3>
+            <audio id="audioPlayer" controls></audio>
+        </div>
     </div>
-    <div class="error" id="error">
-        <p>Error: No YouTube video ID found in the URL.</p>
-        <p>Please use the format: <code>https://notionmedufro.github.io/cobalt/api/{YOUTUBE_VIDEO_ID}</code></p>
-    </div>
+    
+    <footer>
+        <p>Powered by Cobalt API | Low-quality MP3 streaming directly from YouTube CDN</p>
+        <p>This service uses YouTube data and complies with YouTube's Terms of Service.</p>
+    </footer>
 
     <script>
-        (function() {
-            // Extract YouTube video ID from URL path
+        const COBALT_INSTANCES = [
+            {
+                name: 'GitHub Pages',
+                url: 'https://notionmedufro.github.io/cobalt/api/json',
+                apiKey: '7c5a3e8d-94d0-4e8c-b6f2-1a9cd4ba5e87',
+                timeout: 6000 // 6 seconds timeout
+            },
+            {
+                name: 'Local Instance',
+                url: 'http://localhost:9000/api/json',
+                apiKey: '7c5a3e8d-94d0-4e8c-b6f2-1a9cd4ba5e87',
+                timeout: 3000 // 3 seconds timeout
+            },
+            {
+                name: 'Cobalt.tools',
+                url: 'https://cobalt.tools/api/json',
+                apiKey: null, // No API key for public instance
+                timeout: 8000 // 8 seconds timeout
+            }
+        ];
+
+        // DOM Elements
+        const youtubeInput = document.getElementById('youtubeInput');
+        const convertButton = document.getElementById('convertButton');
+        const loader = document.getElementById('loader');
+        const statusMessage = document.getElementById('statusMessage');
+        const playerContainer = document.getElementById('playerContainer');
+        const nowPlaying = document.getElementById('nowPlaying');
+        const audioPlayer = document.getElementById('audioPlayer');
+
+        // Function to extract YouTube ID from various URL formats
+        function extractYoutubeId(input) {
+            // Direct video ID (no URL)
+            if (/^[a-zA-Z0-9_-]{11}$/.test(input)) {
+                return input;
+            }
+
+            // YouTube URL formats
+            const patterns = [
+                /(?:youtube\.com\/watch\?v=|youtube\.com\/watch\?.+&v=|youtu\.be\/|youtube\.com\/embed\/)([a-zA-Z0-9_-]{11})/,
+                /youtube\.com\/shorts\/([a-zA-Z0-9_-]{11})/
+            ];
+
+            for (const pattern of patterns) {
+                const match = input.match(pattern);
+                if (match) {
+                    return match[1];
+                }
+            }
+
+            return null;
+        }
+
+        // Show status message with appropriate styling
+        function showStatus(message, type = 'info') {
+            statusMessage.textContent = message;
+            statusMessage.className = `status ${type}`;
+            statusMessage.style.display = 'block';
+        }
+
+        // Hide status message
+        function hideStatus() {
+            statusMessage.style.display = 'none';
+        }
+
+        // Show loading indicator
+        function showLoading() {
+            loader.style.display = 'block';
+            convertButton.disabled = true;
+        }
+
+        // Hide loading indicator
+        function hideLoading() {
+            loader.style.display = 'none';
+            convertButton.disabled = false;
+        }
+
+        // Try to fetch streaming URL from multiple Cobalt instances with fallback
+        async function fetchStreamingUrl(videoId) {
+            const youtubeUrl = `https://www.youtube.com/watch?v=${videoId}`;
+            
+            let lastError = null;
+            
+            // Try each Cobalt instance in sequence
+            for (const instance of COBALT_INSTANCES) {
+                try {
+                    showStatus(`Trying ${instance.name} instance...`, 'info');
+                    
+                    // Build the request URL with query parameters
+                    const url = new URL(instance.url);
+                    url.searchParams.append('url', youtubeUrl);
+                    url.searchParams.append('audioFormat', 'mp3');
+                    url.searchParams.append('audioBitrate', '8');
+                    url.searchParams.append('downloadMode', 'audio');
+                    url.searchParams.append('disableMetadata', 'true');
+                    url.searchParams.append('stream', 'true'); // Request streaming URL instead of download
+                    
+                    // Add API key if available
+                    if (instance.apiKey) {
+                        url.searchParams.append('key', instance.apiKey);
+                    }
+                    
+                    // Fetch with timeout
+                    const controller = new AbortController();
+                    const timeoutId = setTimeout(() => controller.abort(), instance.timeout);
+                    
+                    const response = await fetch(url.toString(), {
+                        method: 'GET',
+                        headers: {
+                            'Accept': 'application/json'
+                        },
+                        signal: controller.signal
+                    });
+                    
+                    clearTimeout(timeoutId);
+                    
+                    if (!response.ok) {
+                        throw new Error(`Server responded with ${response.status}: ${response.statusText}`);
+                    }
+                    
+                    const data = await response.json();
+                    
+                    // Check if the response contains a streaming URL
+                    if (data.streamingUrl || data.url) {
+                        const streamUrl = data.streamingUrl || data.url;
+                        return {
+                            instance: instance.name,
+                            streamUrl,
+                            videoId
+                        };
+                    } else {
+                        throw new Error('No streaming URL found in the response');
+                    }
+                } catch (error) {
+                    console.error(`Error with ${instance.name} instance:`, error);
+                    lastError = error;
+                    // Continue to the next instance
+                }
+            }
+            
+            // If we get here, all instances failed
+            throw lastError || new Error('Failed to get streaming URL from all available instances');
+        }
+
+        // Process YouTube URL/ID and play audio
+        async function processAndPlay(input) {
+            try {
+                hideStatus();
+                showLoading();
+                
+                const videoId = extractYoutubeId(input);
+                
+                if (!videoId) {
+                    throw new Error('Invalid YouTube URL or Video ID. Please enter a valid YouTube URL or 11-character video ID.');
+                }
+                
+                showStatus(`Fetching audio stream for video ID: ${videoId}...`, 'info');
+                
+                const result = await fetchStreamingUrl(videoId);
+                
+                // Update page with success message
+                showStatus(`Successfully obtained stream from ${result.instance} instance!`, 'success');
+                
+                // Update player and show it
+                nowPlaying.textContent = `Now playing: YouTube video ${videoId} (8kbps audio)`;
+                audioPlayer.src = result.streamUrl;
+                playerContainer.style.display = 'block';
+                
+                // Attempt to play (might be blocked by browser autoplay policy)
+                try {
+                    await audioPlayer.play();
+                } catch (playError) {
+                    console.log('Autoplay was prevented by browser. Click play to listen.');
+                }
+                
+                // Update the URL without reloading to make it shareable
+                const newUrl = new URL(window.location.href);
+                const pathParts = newUrl.pathname.split('/');
+                if (pathParts[pathParts.length - 1] !== videoId && pathParts[pathParts.length - 2] === 'api') {
+                    pathParts[pathParts.length - 1] = videoId;
+                } else if (pathParts[pathParts.length - 1] === 'api' || pathParts[pathParts.length - 1] === '') {
+                    pathParts.push(videoId);
+                }
+                newUrl.pathname = pathParts.join('/');
+                window.history.pushState({}, '', newUrl.toString());
+                
+            } catch (error) {
+                console.error('Error processing YouTube content:', error);
+                showStatus(`Error: ${error.message}`, 'error');
+                playerContainer.style.display = 'none';
+            } finally {
+                hideLoading();
+            }
+        }
+        
+        // Handle form submission
+        convertButton.addEventListener('click', function(event) {
+            event.preventDefault();
+            const input = youtubeInput.value.trim();
+            if (input) {
+                processAndPlay(input);
+            } else {
+                showStatus('Please enter a YouTube URL or video ID', 'error');
+            }
+        });
+        
+        // Also handle Enter key in input field
+        youtubeInput.addEventListener('keyup', function(event) {
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                convertButton.click();
+            }
+        });
+        
+        // Process URL parameters on page load for direct access
+        document.addEventListener('DOMContentLoaded', function() {
+            // Check if the URL contains a video ID in the path
             const path = window.location.pathname;
-            // Handle both /api/VIDEOID and /api/VIDEOID/ formats
             const videoIdMatch = path.match(/\/api\/([^\/]+)\/?$/);
             
             if (videoIdMatch && videoIdMatch[1]) {
                 const videoId = videoIdMatch[1];
-                
-                // Construct the YouTube URL
-                const youtubeUrl = `https://www.youtube.com/watch?v=${videoId}`;
-                
-                // Construct the Cobalt API URL with low quality MP3 parameters
-                const apiUrl = `https://cobalt.tools/api/json?url=${encodeURIComponent(youtubeUrl)}&audioFormat=mp3&audioBitrate=8&downloadMode=audio&disableMetadata=true`;
-                
-                // Redirect after a short delay to show loading state
-                setTimeout(() => {
-                    window.location.href = apiUrl;
-                }, 1500);
-            } else {
-                // Hide loader and show error
-                document.getElementById('loader').style.display = 'none';
-                document.getElementById('message').style.display = 'none';
-                document.getElementById('error').style.display = 'block';
+                youtubeInput.value = videoId;
+                processAndPlay(videoId);
             }
-        })();
-    </script>
-</body>
-</html>
-
+        });
+        
+        // Handle audio player events
+        audioPlayer.addEventListener('play', function() {
+            showStatus('Audio is now playing', 'success');
+        });
+        
+        audioPlayer.addEventListener('error', function() {
+            showStatus(`Playback error: ${audioPlayer.error.message || 'Could not play the audio stream'}`, 'error');
+        });
+        
+        // Handle visibility change to pause when tab is not visible
+        document.addEventListener('visibilitychange', function() {
+            if (document.hidden && !audioPlayer.paused) {
+                audioPlayer.pause();
+            }
+        });
